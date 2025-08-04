@@ -21,7 +21,6 @@ CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
 CACHE_DURATION = 300  # seconds
 
-
 # Helper to check if channel is live and get stream start time
 def get_cached_live_info():
     now = time.time()
@@ -57,7 +56,6 @@ def get_cached_live_info():
     cache["video_id"] = None
     return None, None
 
-
 # Save clip to local file
 def save_clip(title, user, timestamp, url):
     data = {
@@ -76,20 +74,21 @@ def save_clip(title, user, timestamp, url):
     with open("clips.json", "w") as f:
         json.dump(clips, f, indent=2)
 
-
 # Send clip to Discord
-
 def send_to_discord(title, user, timestamp, url):
     if not DISCORD_WEBHOOK_URL:
         return
     content = f"🎬 **{title}** by `{user}`\n⏱️ Timestamp: `{timestamp}`\n🔗 {url}"
     requests.post(DISCORD_WEBHOOK_URL, json={"content": content})
 
-
 @app.route("/")
 def home():
     return "✅ Clipper is running."
 
+@app.route("/ping")
+def ping():
+    print("[PING] Self-ping received.")
+    return "pong", 200
 
 @app.route("/clip")
 def clip():
@@ -115,7 +114,6 @@ def clip():
 
     return f"[✅] {title} clipped by {user} → {clip_url}"
 
-
 @app.route("/clips")
 def get_clips():
     if not os.path.exists("clips.json"):
@@ -123,12 +121,10 @@ def get_clips():
     with open("clips.json") as f:
         return json.load(f)
 
-
 @app.route("/clear")
 def clear_clips():
     open("clips.json", "w").write("[]")
     return "[🗑️] Cleared clips."
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

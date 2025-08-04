@@ -25,19 +25,23 @@ CACHE_DURATION = 300  # seconds
 def get_cached_live_info():
     now = time.time()
     if cache["video_id"] and (now - cache["last_checked"] < CACHE_DURATION):
+        print("[ℹ️] Using cached video ID.")
         return cache["video_id"], cache["start_time"]
 
+    print("[🔍] Checking for live stream...")
     search_url = (
         f"https://www.googleapis.com/youtube/v3/search?part=snippet&channelId={CHANNEL_ID}"
         f"&eventType=live&type=video&key={YOUTUBE_API_KEY}"
     )
     response = requests.get(search_url)
     data = response.json()
+    print("[📡] YouTube Search API Response:", json.dumps(data, indent=2))
 
     if "items" in data and len(data["items"]) > 0:
         video_id = data["items"][0]["id"]["videoId"]
         cache["video_id"] = video_id
         cache["last_checked"] = now
+        print(f"[✅] Live video found: {video_id}")
 
         # Get stream start time
         video_url = (
@@ -45,16 +49,21 @@ def get_cached_live_info():
             f"&key={YOUTUBE_API_KEY}"
         )
         details = requests.get(video_url).json()
+        print("[🕒] Live Streaming Details Response:", json.dumps(details, indent=2))
+
         try:
             start_time = details["items"][0]["liveStreamingDetails"]["actualStartTime"]
             start_dt = datetime.datetime.fromisoformat(start_time.replace("Z", "+00:00"))
             cache["start_time"] = start_dt
             return video_id, start_dt
-        except:
+        except Exception as e:
+            print(f"[⚠️] Could not parse start time: {e}")
             return video_id, None
 
+    print("[❌] No active live stream found.")
     cache["video_id"] = None
     return None, None
+
 
 # Save clip to local file
 def save_clip(title, user, timestamp, url):

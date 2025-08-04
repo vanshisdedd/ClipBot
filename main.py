@@ -24,21 +24,41 @@ CACHE_DURATION = 300  # seconds
 # Helper to check if channel is live and get stream start time
 def get_cached_live_info():
     now = time.time()
+    if not YOUTUBE_API_KEY or not CHANNEL_ID:
+        print("[❌] Missing YOUTUBE_API_KEY or YOUTUBE_CHANNEL_ID environment variable.")
+        cache["video_id"] = None
+        return None, None
+
     if cache["video_id"] and (now - cache["last_checked"] < CACHE_DURATION):
         print("[ℹ️] Using cached video ID.")
         return cache["video_id"], cache["start_time"]
 
-    print("[🔍] Checking for live stream...")
+    print(f"[🔍] Checking for live stream on channel: {CHANNEL_ID}")
     search_url = (
         f"https://www.googleapis.com/youtube/v3/search?part=snippet&channelId={CHANNEL_ID}"
         f"&eventType=live&type=video&key={YOUTUBE_API_KEY}"
     )
-    response = requests.get(search_url)
-    data = response.json()
-    print("[📡] YouTube Search API Response:", json.dumps(data, indent=2))
+    try:
+        response = requests.get(search_url)
+        data = response.json()
+        print("[📡] YouTube Search API Response:", json.dumps(data, indent=2))
+    except Exception as e:
+        print(f"[❌] Error fetching YouTube API: {e}")
+        cache["video_id"] = None
+        return None, None
 
-    if "items" in data and len(data["items"]) > 0:
-        video_id = data["items"][0]["id"]["videoId"]
+    if not data or "items" not in data:
+        print(f"[❌] Unexpected API response: {data}")
+        cache["video_id"] = None
+        return None, None
+
+    if len(data["items"]) > 0:
+        try:
+            video_id = data["items"][0]["id"]["videoId"]
+        except Exception as e:
+            print(f"[❌] Could not extract videoId: {e}")
+            cache["video_id"] = None
+            return None, None
         cache["video_id"] = video_id
         cache["last_checked"] = now
         print(f"[✅] Live video found: {video_id}")
@@ -48,10 +68,9 @@ def get_cached_live_info():
             f"https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id={video_id}"
             f"&key={YOUTUBE_API_KEY}"
         )
-        details = requests.get(video_url).json()
-        print("[🕒] Live Streaming Details Response:", json.dumps(details, indent=2))
-
         try:
+            details = requests.get(video_url).json()
+            print("[🕒] Live Streaming Details Response:", json.dumps(details, indent=2))
             start_time = details["items"][0]["liveStreamingDetails"]["actualStartTime"]
             start_dt = datetime.datetime.fromisoformat(start_time.replace("Z", "+00:00"))
             cache["start_time"] = start_dt
@@ -60,7 +79,7 @@ def get_cached_live_info():
             print(f"[⚠️] Could not parse start time: {e}")
             return video_id, None
 
-    print("[❌] No active live stream found.")
+    print("[❌] No active live stream found. (items empty)")
     cache["video_id"] = None
     return None, None
 

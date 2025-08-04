@@ -4,6 +4,7 @@ import time
 import pytz
 import requests
 import datetime
+import threading
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -20,7 +21,27 @@ cache = {
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK")
+RENDER_URL = os.getenv("RENDER_URL")
 CACHE_DURATION = 300  # Cache live stream info for 5 minutes (300 seconds)
+
+def self_ping():
+    """
+    Pings the deployed application every 10 minutes to prevent it from sleeping.
+    """
+    ping_interval = 150 # 2.5 minutes
+    while True:
+        time.sleep(ping_interval)
+        if not RENDER_URL:
+            print("[ℹ️] RENDER_URL not set. Self-pinging is disabled.")
+            continue # Skip this cycle if the URL isn't set
+        
+        ping_endpoint = f"{RENDER_URL}/ping"
+        try:
+            print(f"[PING] Pinging self at {ping_endpoint} to stay awake.")
+            requests.get(ping_endpoint, timeout=10)
+            print("[PING] Self-ping successful.")
+        except requests.exceptions.RequestException as e:
+            print(f"[❌] Self-ping failed: {e}")
 
 def get_cached_live_info():
     """
@@ -35,18 +56,27 @@ def get_cached_live_info():
     print(f"[LOG] DISCORD_WEBHOOK_URL present: {'Yes' if DISCORD_WEBHOOK_URL else 'No'}")
     print(f"[LOG] Current cache: video_id={cache['video_id']}, start_time={cache['start_time']}, last_checked={cache['last_checked']}")
 
-    # Ensure required environment variables are set
+    # Use cached data if it's recent enough
+    if now - cache["last_checked"] < CACHE_DURATION:
+        # If we checked recently and found nothing, don't check again yet.
+        if not cache["video_id"]:
+             print(f"[ℹ️] Using cached result: No stream found. (age: {int(now - cache['last_checked'])}s)")
+             return None, None
+        # If we found a stream recently, use the cached info.
+        print(f"[ℹ️] Using cached video ID: {cache['video_id']} (age: {int(now - cache['last_checked'])}s)")
+        return cache["video_id"], cache["start_time"]
+
+    # Ensure required environment variables are set before making an API call
     if not YOUTUBE_API_KEY or not CHANNEL_ID:
         print("[❌] Missing YOUTUBE_API_KEY or YOUTUBE_CHANNEL_ID environment variable.")
         cache["video_id"] = None
         return None, None
 
-    # Use cached data if it's recent enough
-    if cache["video_id"] and (now - cache["last_checked"] < CACHE_DURATION):
-        print(f"[ℹ️] Using cached video ID: {cache['video_id']} (age: {int(now - cache['last_checked'])}s)")
-        return cache["video_id"], cache["start_time"]
-
     print(f"[🔍] Cache expired or empty. Checking for live stream on channel: {CHANNEL_ID}")
+    
+    # --- IMPORTANT: Update cache time immediately after deciding to make an API call ---
+    cache["last_checked"] = now
+
     search_url = (
         f"https://www.googleapis.com/youtube/v3/search?part=snippet&channelId={CHANNEL_ID}"
         f"&eventType=live&type=video&key={YOUTUBE_API_KEY}"
@@ -72,9 +102,8 @@ def get_cached_live_info():
             cache["video_id"] = None
             return None, None
         
-        # Update cache with the new video ID and check time
+        # Update cache with the new video ID
         cache["video_id"] = video_id
-        cache["last_checked"] = now
         print(f"[✅] Live video found: {video_id}. Now fetching stream details.")
 
         # Get stream start time from the Videos endpoint
@@ -97,10 +126,10 @@ def get_cached_live_info():
             return video_id, start_dt
         except (requests.exceptions.RequestException, KeyError, IndexError, TypeError) as e:
             print(f"[⚠️] Could not parse start time: {e}")
-            # We found a video but can't get the start time, so we can still clip but timestamp might be off
+            cache["start_time"] = None
             return video_id, None
     
-    print("[❌] No active live stream found (API response had no items).")
+    print("[❌] No active live stream found (API response had no items). Caching this result.")
     cache["video_id"] = None
     cache["start_time"] = None
     return None, None
@@ -207,6 +236,11 @@ def clear_clips():
 
 
 if __name__ == "__main__":
+    # Start the self-pinging thread to prevent the service from sleeping
+    ping_thread = threading.Thread(target=self_ping)
+    ping_thread.daemon = True # Daemon threads exit when the main program exits
+    ping_thread.start()
+
     # Get port from environment variable or default to 10000
     port = int(os.environ.get("PORT", 10000))
     # Run the app, accessible from the network ('0.0.0.0')

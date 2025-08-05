@@ -34,7 +34,7 @@ def self_ping():
         if not RENDER_URL:
             print("[ℹ️] RENDER_URL not set. Self-pinging is disabled.")
             continue # Skip this cycle if the URL isn't set
-        
+
         ping_endpoint = f"{RENDER_URL}/ping"
         try:
             print(f"[PING] Pinging self at {ping_endpoint} to stay awake.")
@@ -60,8 +60,8 @@ def get_cached_live_info():
     if now - cache["last_checked"] < CACHE_DURATION:
         # If we checked recently and found nothing, don't check again yet.
         if not cache["video_id"]:
-             print(f"[ℹ️] Using cached result: No stream found. (age: {int(now - cache['last_checked'])}s)")
-             return None, None
+            print(f"[ℹ️] Using cached result: No stream found. (age: {int(now - cache['last_checked'])}s)")
+            return None, None
         # If we found a stream recently, use the cached info.
         print(f"[ℹ️] Using cached video ID: {cache['video_id']} (age: {int(now - cache['last_checked'])}s)")
         return cache["video_id"], cache["start_time"]
@@ -73,7 +73,7 @@ def get_cached_live_info():
         return None, None
 
     print(f"[🔍] Cache expired or empty. Checking for live stream on channel: {CHANNEL_ID}")
-    
+
     # --- IMPORTANT: Update cache time immediately after deciding to make an API call ---
     cache["last_checked"] = now
 
@@ -81,14 +81,14 @@ def get_cached_live_info():
         f"https://www.googleapis.com/youtube/v3/search?part=snippet&channelId={CHANNEL_ID}"
         f"&eventType=live&type=video&key={YOUTUBE_API_KEY}"
     )
-    
+
     try:
         response = requests.get(search_url)
         response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
         data = response.json()
-        print("[📡] YouTube Search API Response:", json.dumps(data, indent=2))
+        print("[📡] Youtube API Response:", json.dumps(data, indent=2))
     except requests.exceptions.RequestException as e:
-        print(f"[❌] Error fetching from YouTube Search API: {e}")
+        print(f"[❌] Error fetching from Youtube API: {e}")
         cache["video_id"] = None
         return None, None
 
@@ -101,7 +101,7 @@ def get_cached_live_info():
             print(f"[❌] Could not extract videoId from API response: {e}")
             cache["video_id"] = None
             return None, None
-        
+
         # Update cache with the new video ID
         cache["video_id"] = video_id
         print(f"[✅] Live video found: {video_id}. Now fetching stream details.")
@@ -116,10 +116,10 @@ def get_cached_live_info():
             details_response.raise_for_status()
             details = details_response.json()
             print("[🕒] Live Streaming Details Response:", json.dumps(details, indent=2))
-            
+
             start_time_str = details["items"][0]["liveStreamingDetails"]["actualStartTime"]
             print(f"[LOG] Extracted actualStartTime: {start_time_str}")
-            
+
             # Parse the ISO 8601 timestamp and make it timezone-aware
             start_dt = datetime.datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
             cache["start_time"] = start_dt
@@ -128,7 +128,7 @@ def get_cached_live_info():
             print(f"[⚠️] Could not parse start time: {e}")
             cache["start_time"] = None
             return video_id, None
-    
+
     print("[❌] No active live stream found (API response had no items). Caching this result.")
     cache["video_id"] = None
     cache["start_time"] = None
@@ -144,7 +144,7 @@ def save_clip(title, user, timestamp, url):
         "url": url,
         "time": datetime.datetime.now().isoformat()
     }
-    
+
     try:
         # Read existing clips first to avoid overwriting
         with open("clips.json", "r") as f:
@@ -165,7 +165,7 @@ def send_to_discord(title, user, timestamp, url):
     if not DISCORD_WEBHOOK_URL:
         print("[ℹ️] DISCORD_WEBHOOK_URL not set. Skipping notification.")
         return
-    
+
     content = f"🎬 **{title}** by `{user}`\n⏱️ Timestamp: `{timestamp}`\n🔗 {url}"
     try:
         response = requests.post(DISCORD_WEBHOOK_URL, json={"content": content})
@@ -193,6 +193,7 @@ def clip():
     """The main endpoint to create a clip."""
     user = request.args.get("user", "someone")
     message = request.args.get("message", "").strip()
+    # Use the message as the title, or "Clip" if no message is provided
     title = message if message else "Clip"
 
     video_id, stream_start = get_cached_live_info()
@@ -206,15 +207,16 @@ def clip():
     now_utc = datetime.datetime.now(pytz.utc)
     delay = 35  # seconds
     clip_time = now_utc - datetime.timedelta(seconds=delay)
-    
+
     seconds_since_start = max(0, int((clip_time - stream_start).total_seconds()))
     timestamp_str = str(datetime.timedelta(seconds=seconds_since_start))
-    clip_url = f"https://youtu.be/{video_id}?t={seconds_since_start}s"
+    clip_url = f"https://www.youtube.com/watch?v={video_id}&t={seconds_since_start}s"
 
     save_clip(title, user, timestamp_str, clip_url)
     send_to_discord(title, user, timestamp_str, clip_url)
 
-    return f"[✅] '{title}' clipped by {user} → {clip_url}"
+    # Changed the response message as requested
+    return "Clip Saved and sent to discord."
 
 @app.route("/clips")
 def get_clips():

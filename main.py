@@ -334,16 +334,10 @@ def clip():
 
     video_id, stream_start = get_live_info()
     if not video_id:
-        return jsonify({
-            "error": "No active live stream found",
-            "stream_status": cache["stream_status"],
-            "consecutive_failures": cache["consecutive_failures"]
-        }), 404
+        return "[❌] No active live stream found.", 404
         
     if not stream_start:
-        return jsonify({
-            "error": "Couldn't retrieve stream start time. Cannot create a timestamped clip."
-        }), 500
+        return "[❌] Couldn't retrieve stream start time. Cannot create a timestamped clip.", 500
 
     now_utc = datetime.datetime.now(pytz.utc)
     delay = 35  # seconds to account for stream latency
@@ -355,16 +349,7 @@ def clip():
     save_clip(title, user, timestamp_str, clip_url)
     send_to_discord(title, user, timestamp_str, clip_url)
 
-    return jsonify({
-        "success": True,
-        "message": "Clip saved and sent to Discord",
-        "clip": {
-            "title": title,
-            "user": user,
-            "timestamp": timestamp_str,
-            "url": clip_url
-        }
-    })
+    return f"🎥 Clip Saved and sent to Discord | {title}"
 
 @app.route("/clips")
 def get_clips():
